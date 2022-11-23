@@ -3,10 +3,8 @@ import rospy
 import sys
 import cv2
 import numpy as np
-from d3_apriltag.msg import AprilTagDetection, AprilTagDetectionArray
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Pose, PoseWithCovariance, PoseWithCovarianceStamped, Point, Quaternion
-import std_msgs.msg
+from std_msgs.msg import String, Int32
 from cv_bridge import CvBridge, CvBridgeError
 from scipy.spatial import distance
 from scipy.optimize import linear_sum_assignment
@@ -15,13 +13,17 @@ from pylibdmtx.pylibdmtx import decode
 
 # from pyzbar.pyzbar import decode
 
-class datamatrix_visualizer:
+class inventory_visualizer:
     def __init__(self, camera_info):
-        self.state = "SCANNING_A"
+        print("Init Inventory Visualizer")
+        self.state = "STARTUP"
         self.d3_blue_color = (239, 174, 0)
         self.camera_info = camera_info
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber('/imx390/image_raw_rgb', Image, self.image_callback, queue_size=1)
+        self.viz_resp_pub = rospy.Publisher('/viz_resp', String, queue_size=10)
+        self.state_sub = rospy.Subscriber('/robot_state', String, self.state_callback, queue_size=5)
+        self.viz_resp_pub.publish("ACK")
+        self.expected_codes = 0
         self.display_width = 1920
         self.display_height = 1080
         item_image_size = 100
@@ -58,6 +60,12 @@ class datamatrix_visualizer:
         self.current_image = None
         cv2.namedWindow("Robot Monitor", cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty("Robot Monitor", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        # for i in range(10):
+        #     print(i)
+        #     self.viz_resp_pub.publish("ACK")
+        #     rospy.sleep(1)
+        print("Init Complete")
+        #self.state_callback(String(self.state))
 
     def get_blank_image(self, num_channels=3):
         blank_image = np.zeros([self.display_height, self.display_width, num_channels], dtype=np.uint8)
@@ -235,19 +243,18 @@ class datamatrix_visualizer:
         print(str(len(detections)) + " Data Matrix codes detected")
         if len(detections) < expected_num_codes:
             print("Did not reach Target of " + str(expected_num_codes))
-            return self.run_detect(image, expected_num_codes, timeout+1000)
+            return None
         for d in detections:
             if str(d.data, 'utf-8') not in self.tag_to_item:
                 print("Found bad value for tag: " + str(d.data, 'utf-8'))
-                return self.run_detect(image, expected_num_codes, timeout+1000)
+                return None
         return detections
 
 
 
-    def image_callback(self, image):
+    def cam_img_recv(self, image):
         rospy.loginfo("Got Image")
         try:
-            self.image_sub.unregister()
             self.current_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
 
             display_image = self.get_blank_slide()
@@ -256,7 +263,9 @@ class datamatrix_visualizer:
             display_image, temp = self.image_overlay_center(display_image, cv2.imread(self.respath + "Scanning.png"))
             cv2.imshow("Robot Monitor", display_image)
             cv2.waitKey(100)
-            detections = self.run_detect(self.current_image, 4)
+            detections = self.run_detect(self.current_image, self.expected_codes)
+            if detections is None:
+                return False
             display_image = self.get_blank_slide()
             scaled_image, detections = self.scale_image_and_detections(self.current_image, detections, 75)
             display_image, cam_ol_coords = self.image_overlay_center(display_image, scaled_image)
@@ -289,15 +298,32 @@ class datamatrix_visualizer:
                 # cv2.waitKey(1000)
                 cv2.imshow("Robot Monitor", display_image)
             self.draw_detected_objects(display_image, drawn_rects)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-            exit()
+            return True
         except CvBridgeError as e:
             rospy.loginfo(e)
 
+    def state_callback(self, state):
+        rospy.loginfo("State Received")
+        self.state = state.data
+        print(self.state)
+        if self.state == "SCANNING_A" or self.state == "SCANNING_B" or self.state == "SCANNING_C":
+            self.expected_codes = rospy.wait_for_message('/dmtx_count', Int32).data
+            camera_image = rospy.wait_for_message('/imx390/image_raw_rgb', Image)
+            while not self.cam_img_recv(camera_image):
+                camera_image = rospy.wait_for_message('/imx390/image_raw_rgb', Image)
+                self.expected_codes -= 1
+            self.viz_resp_pub.publish("ACK")
+        else:
+            display_image = self.get_blank_slide()
+            cv2.imshow("Robot Monitor", display_image)
+        cv2.waitKey(100)
+        print("Completed Callback")
+
+
+
 
 def main(args):
-    rospy.init_node('datamatrix_visualizer', anonymous=True)
+    rospy.init_node('inventory_visualizer', anonymous=True)
 
     # Get camera name from parameter server
     camera_name = rospy.get_param("~camera_name", "camera")
@@ -308,7 +334,7 @@ def main(args):
     camera_info = rospy.wait_for_message(camera_info_topic, CameraInfo)
     camera_info = np.array(camera_info.K, dtype=np.float32).reshape((3, 3))
     rospy.loginfo("Camera intrinsic matrix: %s" % str(camera_info))
-    dmtx = datamatrix_visualizer(camera_info)
+    inv_viz = inventory_visualizer(camera_info)
     try:
         rospy.spin()
     except KeyboardInterrupt:
@@ -317,5 +343,5 @@ def main(args):
 
 
 if __name__ == '__main__':
-    print("Starting DataMatrix Detction/Visualizer Node")
+    print("Starting Inventory Visualizer Node")
     main(sys.argv)

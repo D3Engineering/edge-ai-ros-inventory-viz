@@ -9,6 +9,7 @@ from geometry_msgs.msg import Pose, PoseWithCovariance, PoseWithCovarianceStampe
 import std_msgs.msg
 from cv_bridge import CvBridge, CvBridgeError
 from scipy.spatial import distance
+from scipy.optimize import linear_sum_assignment
 from pylibdmtx.pylibdmtx import decode
 
 
@@ -16,6 +17,7 @@ from pylibdmtx.pylibdmtx import decode
 
 class datamatrix_visualizer:
     def __init__(self, camera_info):
+        self.state = "SCANNING_A"
         self.d3_blue_color = (239, 174, 0)
         self.camera_info = camera_info
         self.bridge = CvBridge()
@@ -23,23 +25,27 @@ class datamatrix_visualizer:
         self.display_width = 1920
         self.display_height = 1080
         item_image_size = 100
-        item_image_locs = [{'dtop': 200, 'dleft': 75, 'inCorn': []}, {'dtop': 500, 'dleft': 75, 'inCorn': []}, {'dtop': 800, 'dleft': 75, 'inCorn': []},
-                           {'dtop': 20, 'dleft': 500, 'inCorn': []}, {'dtop': 20, 'dleft': 910, 'inCorn': []}, {'dtop': 20, 'dright': 500, 'inCorn': []},
-                           {'dbottom': 20, 'dleft': 500, 'inCorn': []}, {'dbottom': 20, 'dleft': 910, 'inCorn': []}, {'dbottom': 20, 'dright': 500, 'inCorn': []},
-                           {'dtop': 200, 'dright': 75, 'inCorn': []}, {'dtop': 500, 'dright': 75, 'inCorn': []}, {'dtop': 800, 'dright': 75, 'inCorn': []}]
+        item_image_locs = [{'dtop': 200, 'dleft': 75, 'inCorn': [], 'ctr': []}, {'dtop': 800, 'dleft': 75, 'inCorn': [], 'ctr': []},
+                           #{'dtop': 20, 'dleft': 500, 'inCorn': [], 'ctr': []}, {'dtop': 20, 'dleft': 910, 'inCorn': [], 'ctr': []}, {'dtop': 20, 'dright': 500, 'inCorn': [], 'ctr': []},
+                           {'dbottom': 20, 'dleft': 500, 'inCorn': [], 'ctr': []},  {'dbottom': 20, 'dright': 500, 'inCorn': [], 'ctr': []},
+                           {'dtop': 200, 'dright': 75, 'inCorn': [], 'ctr': []}, {'dtop': 800, 'dright': 75, 'inCorn': [], 'ctr': []}]
         for iil in item_image_locs:
             if 'dtop' in iil and 'dleft' in iil:
                 iil['inCorn'] = [(iil['dleft']+item_image_size, iil['dtop']), # Inner Top Corner
                     (iil['dleft']+item_image_size, iil['dtop']+item_image_size)] # Inner Bottom Corner
+                iil['ctr'] = (iil['dleft']+int(item_image_size/2), iil['dtop']+int(item_image_size/2)) # Center
             elif 'dtop' in iil and 'dright' in iil:
                 iil['inCorn'] = [(self.display_width-iil['dright']-item_image_size, iil['dtop']), # Inner Top Corner
                     (self.display_width-iil['dright']-item_image_size, iil['dtop']+item_image_size)] # Inner Bottom Corner
+                iil['ctr'] = (self.display_width-iil['dright']-int(item_image_size/2), iil['dtop']+int(item_image_size/2)) # Center
             elif 'dbottom' in iil and 'dleft' in iil:
                 iil['inCorn'] = [(iil['dleft'], self.display_height-iil['dbottom']-item_image_size), # Inner Left Corner
                     (iil['dleft']+item_image_size, self.display_height-iil['dbottom']-item_image_size)] # Inner Right Corner
+                iil['ctr'] = (iil['dleft'] + int(item_image_size / 2), self.display_height - iil['dbottom'] - int(item_image_size / 2))  # Center
             elif 'dbottom' in iil and 'dright' in iil:
                 iil['inCorn'] = [(self.display_width-iil['dright']-item_image_size, self.display_height-iil['dbottom']-item_image_size), # Inner Left Corner
                                  (self.display_width-iil['dright'], self.display_height-iil['dbottom']-item_image_size)] # Inner Right Corner
+                iil['ctr'] = (self.display_width - iil['dright'] - int(item_image_size / 2), self.display_height - iil['dbottom'] - int(item_image_size / 2))  # Center
             else:
                 print("Error during item_image_locs initialization... Exiting")
                 exit()
@@ -95,8 +101,14 @@ class datamatrix_visualizer:
     def get_blank_slide(self):
         blank_slide = self.get_blank_image()
         blank_slide, image_pos = self.image_overlay_pos(blank_slide,
-                                                        self.scale_image(cv2.imread(self.respath + "D3TI.jpg"), 50),
+                                                        self.scale_image(cv2.imread(self.respath + "D3.png"), 100),
+                                                        ol_dleft=0, ol_dbottom=0)
+        blank_slide, image_pos = self.image_overlay_pos(blank_slide,
+                                                        self.scale_image(cv2.imread(self.respath + "TI.png"), 100),
                                                         ol_dright=0, ol_dbottom=0)
+        blank_slide, image_pos = self.image_overlay_pos(blank_slide,
+                                                        self.scale_image(cv2.imread(self.respath + "state/" + self.state + ".png"), 100),
+                                                        ol_dleft=0, ol_dtop=0)
         return blank_slide
 
     def image_overlay_center(self, bg_image, ol_image):
@@ -119,72 +131,102 @@ class datamatrix_visualizer:
             sd['rect']['top'] = int(d.rect.top * scale_percent / 100)
             sd['rect']['width'] = int(d.rect.width * scale_percent / 100)
             sd['rect']['height'] = int(d.rect.height * scale_percent / 100)
+            sd['rect']['centerx'] = sd['rect']['left'] + int(sd['rect']['width'] / 2)
+            sd['rect']['centery'] = sd['rect']['top'] + int(sd['rect']['height'] / 2)
             scaled_detections.append(sd)
         return scaled_image, scaled_detections
 
     def draw_detected_objects(self, image, drawn_rects):
+        original_image = image.copy()
+        itembox_ctrs = []
+        detection_ctrs = []
+        for iil in self.item_image_locs:
+            itembox_ctrs.append(iil['ctr'])
+        drawn_rect_arr = []
         for d in drawn_rects.values():
-            image = cv2.rectangle(image,
-                                          (d['left'], d['top']), (d['right'], d['bottom']),
-                                          self.d3_blue_color, 2)
+            print(d)
+            detection_ctrs.append(d['ctr'])
+            drawn_rect_arr.append(d)
+        costmat = distance.cdist(itembox_ctrs, detection_ctrs, 'euclidean')
+        solved_lsa = linear_sum_assignment(costmat)
+        lsa_rows = solved_lsa[0]
+        lsa_cols = solved_lsa[1]
+        for i in range(len(lsa_cols)):
+            sol = (lsa_rows[i], lsa_cols[i])
+            print(sol)
+            print("Solution: ")
+            lco = self.item_image_locs[sol[0]]
+            print(lco)
+            d = drawn_rect_arr[sol[1]]
+            print(d)
+            image = cv2.rectangle(image, (d['left'], d['top']), (d['right'], d['bottom']), self.d3_blue_color, 2)
             cv2.waitKey(500)
             cv2.imshow("Robot Monitor", image)
-            lowest_corner_distance = 1920
-            lowest_corner_obj = None
-            lowest_corner_incorn = None
-            corner_of_rect = None
-            for iil in self.item_image_locs:
-                for inCorn in iil['inCorn']:
-                    tldist = distance.euclidean((d['left'], d['top'], 0), (inCorn[0], inCorn[1], 0))
-                    if tldist < lowest_corner_distance:
-                        lowest_corner_distance = tldist
-                        lowest_corner_obj = iil
-                        lowest_corner_incorn = inCorn
-                        corner_of_rect = (d['left'], d['top'])
-                    trdist = distance.euclidean((d['right'], d['top'], 0), (inCorn[0], inCorn[1], 0))
-                    if trdist < lowest_corner_distance:
-                        lowest_corner_distance = trdist
-                        lowest_corner_obj = iil
-                        lowest_corner_incorn = inCorn
-                        corner_of_rect = (d['right'], d['top'])
-                    bldist = distance.euclidean((d['left'], d['bottom'], 0), (inCorn[0], inCorn[1], 0))
-                    if bldist < lowest_corner_distance:
-                        lowest_corner_distance = bldist
-                        lowest_corner_obj = iil
-                        lowest_corner_incorn = inCorn
-                        corner_of_rect = (d['left'], d['bottom'])
-                    brdist = distance.euclidean((d['right'], d['bottom'], 0), (inCorn[0], inCorn[1], 0))
-                    if brdist < lowest_corner_distance:
-                        lowest_corner_distance = brdist
-                        lowest_corner_obj = iil
-                        lowest_corner_incorn = inCorn
-                        corner_of_rect = (d['right'], d['bottom'])
-            self.item_image_locs.remove(lowest_corner_obj)
-
-            lco = lowest_corner_obj
+            image = cv2.line(image, lco['ctr'], d['ctr'], self.d3_blue_color, 2, lineType=cv2.LINE_AA)
+            image[d['bottom']+2:d['top']-2,d['left']+2:d['right']-2] = original_image[d['bottom']+2:d['top']-2,d['left']+2:d['right']-2]
             ol_coords = None
             if 'dtop' in lco and 'dleft' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-                                       ol_dleft=lco['dleft'])
-
+                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
+                                                          ol_dleft=lco['dleft'])
             elif 'dtop' in lco and 'dright' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-                                       ol_dright=lco['dright'])
+                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
+                                                          ol_dright=lco['dright'])
             elif 'dbottom' in lco and 'dleft' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-                                       ol_dleft=lco['dleft'])
+                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
+                                                          ol_dleft=lco['dleft'])
             elif 'dbottom' in lco and 'dright' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-                                       ol_dright=lco['dright'])
+                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
+                                                          ol_dright=lco['dright'])
             else:
                 print("Error during item_image_locs drawing... Exiting")
                 exit()
-            cv2.rectangle(image,
-                          (ol_coords['left'], ol_coords['top']), (ol_coords['right'], ol_coords['bottom']),
-                          self.d3_blue_color, 2)
-            image = cv2.line(image, lowest_corner_incorn, corner_of_rect, self.d3_blue_color, 2)
+            image = cv2.rectangle(image,
+                                  (ol_coords['left'], ol_coords['top']), (ol_coords['right'], ol_coords['bottom']),
+                                  self.d3_blue_color, 2)
             cv2.waitKey(750)
             cv2.imshow("Robot Monitor", image)
+        # for d in drawn_rects.values():
+        #     image = cv2.rectangle(image,
+        #                                   (d['left'], d['top']), (d['right'], d['bottom']),
+        #                                   self.d3_blue_color, 2)
+        #     cv2.waitKey(500)
+        #     cv2.imshow("Robot Monitor", image)
+        #     lowest_corner_distance = 1920
+        #     lowest_corner_obj = None
+        #     lowest_corner_incorn = None
+        #     corner_of_rect = None
+        #
+        #
+        #
+        #
+        #     # lco = lowest_corner_obj
+        #     # ol_coords = None
+        #     # if 'dtop' in lco and 'dleft' in lco:
+        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
+        #     #                            ol_dleft=lco['dleft'])
+        #     #
+        #     # elif 'dtop' in lco and 'dright' in lco:
+        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
+        #     #                            ol_dright=lco['dright'])
+        #     # elif 'dbottom' in lco and 'dleft' in lco:
+        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
+        #     #                            ol_dleft=lco['dleft'])
+        #     # elif 'dbottom' in lco and 'dright' in lco:
+        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
+        #     #                            ol_dright=lco['dright'])
+        #     # else:
+        #     #     print("Error during item_image_locs drawing... Exiting")
+        #     #     exit()
+        #     # cv2.rectangle(image,
+        #     #               (ol_coords['left'], ol_coords['top']), (ol_coords['right'], ol_coords['bottom']),
+        #     #               self.d3_blue_color, 2)
+        #     # image = cv2.line(image, lowest_corner_incorn, corner_of_rect, self.d3_blue_color, 2)
+        #     cv2.waitKey(750)
+        #     cv2.imshow("Robot Monitor", image)
 
     def run_detect(self, image, expected_num_codes, timeout=3000):
         print("Running Data Matrix Detection for " + str(expected_num_codes) + " Codes and a timeout of " + str(timeout))
@@ -242,6 +284,7 @@ class datamatrix_visualizer:
                 draw_data['right'] = right
                 draw_data['width'] = d['rect']['width']
                 draw_data['height'] = d['rect']['height']
+                draw_data['ctr'] = (left+int(d['rect']['width']/2), top-int(d['rect']['height']/2))
                 drawn_rects[d['data']] = draw_data
                 # cv2.waitKey(1000)
                 cv2.imshow("Robot Monitor", display_image)

@@ -15,7 +15,7 @@
     <!-- node name -->
     <arg name="node_name" default="gscam_node"/>
     <!-- camera name: also used as namespace for the output topic name -->
-    <arg name="camera_name" default="imx390"/>
+    <arg name="camera_name" default="left/imx390"/>
     <!-- DCC VISS binary file -->
     <arg name="dcc_isp_file" default="/opt/imaging/imx390/dcc_viss.bin"/>
     <!-- DCC 2A binary file -->
@@ -35,7 +35,7 @@
         Note: /dev/v4l-subdev ID can change, depending on the device attached, and at reboot. -->
 
     <node pkg="d3_inv_viz" type="datamatrix_detect_viz.py" name="datamatrix_viz" output="screen">
-        <param name="camera_name" value="imx390"/>
+        <param name="camera_name" value="left/imx390"/>
         <remap from="/image_raw" to="/imx390/image_rgb"/>
     </node>
 

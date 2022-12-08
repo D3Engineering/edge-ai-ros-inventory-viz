@@ -16,8 +16,8 @@ class datamatrix_visualizer:
 	def __init__(self, camera_info):
 		self.camera_info = camera_info
 		self.bridge = CvBridge()
-		self.image_sub = rospy.Subscriber('/imx390/image_raw_rgb', Image, self.image_callback, queue_size=1)
-		self.image_pub = rospy.Publisher('/imx390/image_fused', Image, queue_size=1)
+		self.image_sub = rospy.Subscriber('/left/imx390/image_raw_rgb', Image, self.image_callback, queue_size=1)
+		self.image_pub = rospy.Publisher('/left/imx390/image_fused', Image, queue_size=1)
 		self.current_image = None
 
 	def image_callback(self, image):

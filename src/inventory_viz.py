@@ -307,10 +307,13 @@ class inventory_visualizer:
         self.state = state.data
         print(self.state)
         if self.state == "SCANNING_A" or self.state == "SCANNING_B" or self.state == "SCANNING_C":
+            print("Waiting for dmtx_count")
             self.expected_codes = rospy.wait_for_message('/dmtx_count', Int32).data
-            camera_image = rospy.wait_for_message('/imx390/image_raw_rgb', Image)
+            print("Waiting for image_raw_rgb")
+            camera_image = rospy.wait_for_message('/left/imx390/image_raw_rgb', Image)
             while not self.cam_img_recv(camera_image):
-                camera_image = rospy.wait_for_message('/imx390/image_raw_rgb', Image)
+                print("Waiting for image_raw_rgb again")
+                camera_image = rospy.wait_for_message('/left/imx390/image_raw_rgb', Image)
                 self.expected_codes -= 1
             self.viz_resp_pub.publish("ACK")
         else:

@@ -16,16 +16,29 @@ from pylibdmtx.pylibdmtx import decode
 class inventory_visualizer:
     def __init__(self, camera_info):
         print("Init Inventory Visualizer")
+        cv2.namedWindow("Robot Monitor", cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty("Robot Monitor", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         self.state = "STARTUP"
+        self.display_width = 1920
+        self.display_height = 1080
+        self.respath = "/root/j7ros_home/ros_ws/src/robotics_sdk/ros1/drivers/edge-ai-ros-inventory-viz/res/"
+        self.current_image = None
+        cv2.imshow("Robot Monitor", self.get_blank_slide())
+        cv2.waitKey(100)
         self.d3_blue_color = (239, 174, 0)
         self.camera_info = camera_info
         self.bridge = CvBridge()
         self.viz_resp_pub = rospy.Publisher('/viz_resp', String, queue_size=10)
-        self.state_sub = rospy.Subscriber('/robot_state', String, self.state_callback, queue_size=5)
+        startup_confirm = ""
+        #while startup_confirm != "y" and startup_confirm != "n":
+        #    startup_confirm = input("Is window started correctly? [y/n]: ")
+        #if startup_confirm == "n":
+        #    exit()
+        #else:
         self.viz_resp_pub.publish("ACK")
+        self.state_sub = rospy.Subscriber('/robot_state', String, self.state_callback, queue_size=5)
+        self.pcl_sub = rospy.Subscriber('/front/imx390/image_fused', Image, self.pcl_img_callback, queue_size=5)
         self.expected_codes = 0
-        self.display_width = 1920
-        self.display_height = 1080
         item_image_size = 100
         item_image_locs = [{'dtop': 200, 'dleft': 75, 'inCorn': [], 'ctr': []}, {'dtop': 800, 'dleft': 75, 'inCorn': [], 'ctr': []},
                            #{'dtop': 20, 'dleft': 500, 'inCorn': [], 'ctr': []}, {'dtop': 20, 'dleft': 910, 'inCorn': [], 'ctr': []}, {'dtop': 20, 'dright': 500, 'inCorn': [], 'ctr': []},
@@ -56,10 +69,6 @@ class inventory_visualizer:
                'D7': "Motors", 'D8': "Nuts", 'D9': "Shafts", 'D10': "Solder", 'D11': "Sprockets", 'D12': "Switches",
                'D13': "Washers", 'D14': "Wires"}
         self.tag_to_item = tti
-        self.respath = "/root/j7ros_home/ros_ws/src/robotics_sdk/ros1/drivers/edge-ai-ros-inventory-viz/res/"
-        self.current_image = None
-        cv2.namedWindow("Robot Monitor", cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty("Robot Monitor", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         # for i in range(10):
         #     print(i)
         #     self.viz_resp_pub.publish("ACK")
@@ -250,10 +259,24 @@ class inventory_visualizer:
                 return None
         return detections
 
+    def pcl_img_callback(self, image):
+        rospy.loginfo("Got PointCloud Visualized Image")
+        if self.state == "SCANNING_A" or self.state == "SCANNING_B" or self.state == "SCANNING_C":
+            rospy.loginfo("State is SCANNING_%, ignoring received PointCloud Image")
+        else:
+            try:
+                pcl_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
+                display_image = self.get_blank_slide()
+                display_image, ol_coords = self.image_overlay_center(display_image, pcl_image)
+                rospy.loginfo("Updating Frame")
+                cv2.imshow("Robot Monitor", display_image)
+                cv2.waitKey(50)
+            except CvBridgeError as e:
+                rospy.loginfo(e)
 
 
-    def cam_img_recv(self, image):
-        rospy.loginfo("Got Image")
+    def dmtx_cam_img_recv(self, image):
+        rospy.loginfo("Got DataMatrix Image")
         try:
             self.current_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
 
@@ -311,12 +334,13 @@ class inventory_visualizer:
             self.expected_codes = rospy.wait_for_message('/dmtx_count', Int32).data
             print("Waiting for image_raw_rgb")
             camera_image = rospy.wait_for_message('/left/imx390/image_raw_rgb', Image)
-            while not self.cam_img_recv(camera_image):
+            while not self.dmtx_cam_img_recv(camera_image):
                 print("Waiting for image_raw_rgb again")
                 camera_image = rospy.wait_for_message('/left/imx390/image_raw_rgb', Image)
                 self.expected_codes -= 1
             self.viz_resp_pub.publish("ACK")
         else:
+            print("State is not SCANNING_%, skipping Scan Routine")
             display_image = self.get_blank_slide()
             cv2.imshow("Robot Monitor", display_image)
         cv2.waitKey(100)

@@ -39,5 +39,7 @@
         <remap from="/image_raw" to="left/imx390/image_rgb"/>
     </node>
 
+    <include file="$(find d3_fusion)/launch/front_fusion_pcl_render.launch">
+    </include>
 </launch>
 

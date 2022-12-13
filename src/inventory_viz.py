@@ -10,9 +10,6 @@ from scipy.spatial import distance
 from scipy.optimize import linear_sum_assignment
 from pylibdmtx.pylibdmtx import decode
 
-
-# from pyzbar.pyzbar import decode
-
 class inventory_visualizer:
     def __init__(self, camera_info):
         print("Init Inventory Visualizer")
@@ -29,19 +26,12 @@ class inventory_visualizer:
         self.camera_info = camera_info
         self.bridge = CvBridge()
         self.viz_resp_pub = rospy.Publisher('/viz_resp', String, queue_size=10)
-        startup_confirm = ""
-        #while startup_confirm != "y" and startup_confirm != "n":
-        #    startup_confirm = input("Is window started correctly? [y/n]: ")
-        #if startup_confirm == "n":
-        #    exit()
-        #else:
         self.viz_resp_pub.publish("ACK")
         self.state_sub = rospy.Subscriber('/robot_state', String, self.state_callback, queue_size=5)
         self.pcl_sub = rospy.Subscriber('/front/imx390/image_fused', Image, self.pcl_img_callback, queue_size=5)
         self.expected_codes = 0
         item_image_size = 100
         item_image_locs = [{'dtop': 200, 'dleft': 75, 'inCorn': [], 'ctr': []}, {'dtop': 800, 'dleft': 75, 'inCorn': [], 'ctr': []},
-                           #{'dtop': 20, 'dleft': 500, 'inCorn': [], 'ctr': []}, {'dtop': 20, 'dleft': 910, 'inCorn': [], 'ctr': []}, {'dtop': 20, 'dright': 500, 'inCorn': [], 'ctr': []},
                            {'dbottom': 20, 'dleft': 500, 'inCorn': [], 'ctr': []},  {'dbottom': 20, 'dright': 500, 'inCorn': [], 'ctr': []},
                            {'dtop': 200, 'dright': 75, 'inCorn': [], 'ctr': []}, {'dtop': 800, 'dright': 75, 'inCorn': [], 'ctr': []}]
         for iil in item_image_locs:
@@ -69,12 +59,7 @@ class inventory_visualizer:
                'D7': "Motors", 'D8': "Nuts", 'D9': "Shafts", 'D10': "Solder", 'D11': "Sprockets", 'D12': "Switches",
                'D13': "Washers", 'D14': "Wires"}
         self.tag_to_item = tti
-        # for i in range(10):
-        #     print(i)
-        #     self.viz_resp_pub.publish("ACK")
-        #     rospy.sleep(1)
         print("Init Complete")
-        #self.state_callback(String(self.state))
 
     def get_blank_image(self, num_channels=3):
         blank_image = np.zeros([self.display_height, self.display_width, num_channels], dtype=np.uint8)
@@ -164,90 +149,55 @@ class inventory_visualizer:
             print(d)
             detection_ctrs.append(d['ctr'])
             drawn_rect_arr.append(d)
-        costmat = distance.cdist(itembox_ctrs, detection_ctrs, 'euclidean')
-        solved_lsa = linear_sum_assignment(costmat)
-        lsa_rows = solved_lsa[0]
-        lsa_cols = solved_lsa[1]
-        for i in range(len(lsa_cols)):
-            sol = (lsa_rows[i], lsa_cols[i])
-            print(sol)
-            print("Solution: ")
-            lco = self.item_image_locs[sol[0]]
-            print(lco)
-            d = drawn_rect_arr[sol[1]]
-            print(d)
-            image = cv2.rectangle(image, (d['left'], d['top']), (d['right'], d['bottom']), self.d3_blue_color, 2)
-            cv2.waitKey(500)
-            cv2.imshow("Robot Monitor", image)
-            image = cv2.line(image, lco['ctr'], d['ctr'], self.d3_blue_color, 2, lineType=cv2.LINE_AA)
-            image[d['bottom']+2:d['top']-2,d['left']+2:d['right']-2] = original_image[d['bottom']+2:d['top']-2,d['left']+2:d['right']-2]
-            ol_coords = None
-            if 'dtop' in lco and 'dleft' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-                                                          ol_dleft=lco['dleft'])
-            elif 'dtop' in lco and 'dright' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-                                                          ol_dright=lco['dright'])
-            elif 'dbottom' in lco and 'dleft' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-                                                          ol_dleft=lco['dleft'])
-            elif 'dbottom' in lco and 'dright' in lco:
-                image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                    self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-                                                          ol_dright=lco['dright'])
-            else:
-                print("Error during item_image_locs drawing... Exiting")
-                exit()
-            image = cv2.rectangle(image,
-                                  (ol_coords['left'], ol_coords['top']), (ol_coords['right'], ol_coords['bottom']),
-                                  self.d3_blue_color, 2)
-            cv2.waitKey(750)
-            cv2.imshow("Robot Monitor", image)
-        # for d in drawn_rects.values():
-        #     image = cv2.rectangle(image,
-        #                                   (d['left'], d['top']), (d['right'], d['bottom']),
-        #                                   self.d3_blue_color, 2)
-        #     cv2.waitKey(500)
-        #     cv2.imshow("Robot Monitor", image)
-        #     lowest_corner_distance = 1920
-        #     lowest_corner_obj = None
-        #     lowest_corner_incorn = None
-        #     corner_of_rect = None
-        #
-        #
-        #
-        #
-        #     # lco = lowest_corner_obj
-        #     # ol_coords = None
-        #     # if 'dtop' in lco and 'dleft' in lco:
-        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-        #     #                            ol_dleft=lco['dleft'])
-        #     #
-        #     # elif 'dtop' in lco and 'dright' in lco:
-        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-        #     #                            ol_dright=lco['dright'])
-        #     # elif 'dbottom' in lco and 'dleft' in lco:
-        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-        #     #                            ol_dleft=lco['dleft'])
-        #     # elif 'dbottom' in lco and 'dright' in lco:
-        #     #     image, ol_coords = self.image_overlay_pos(image, cv2.imread(self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-        #     #                            ol_dright=lco['dright'])
-        #     # else:
-        #     #     print("Error during item_image_locs drawing... Exiting")
-        #     #     exit()
-        #     # cv2.rectangle(image,
-        #     #               (ol_coords['left'], ol_coords['top']), (ol_coords['right'], ol_coords['bottom']),
-        #     #               self.d3_blue_color, 2)
-        #     # image = cv2.line(image, lowest_corner_incorn, corner_of_rect, self.d3_blue_color, 2)
-        #     cv2.waitKey(750)
-        #     cv2.imshow("Robot Monitor", image)
+        if len(detection_ctrs) == 0:
+            print("Skipping Drawing of Objects, as none were Detected")
+        else:
+            costmat = distance.cdist(itembox_ctrs, detection_ctrs, 'euclidean')
+            solved_lsa = linear_sum_assignment(costmat)
+            lsa_rows = solved_lsa[0]
+            lsa_cols = solved_lsa[1]
+            for i in range(len(lsa_cols)):
+                sol = (lsa_rows[i], lsa_cols[i])
+                print(sol)
+                print("Solution: ")
+                lco = self.item_image_locs[sol[0]]
+                print(lco)
+                d = drawn_rect_arr[sol[1]]
+                print(d)
+                image = cv2.rectangle(image, (d['left'], d['top']), (d['right'], d['bottom']), self.d3_blue_color, 2)
+                cv2.waitKey(500)
+                cv2.imshow("Robot Monitor", image)
+                image = cv2.line(image, lco['ctr'], d['ctr'], self.d3_blue_color, 2, lineType=cv2.LINE_AA)
+                image[d['bottom']+2:d['top']-2,d['left']+2:d['right']-2] = original_image[d['bottom']+2:d['top']-2,d['left']+2:d['right']-2]
+                ol_coords = None
+                if 'dtop' in lco and 'dleft' in lco:
+                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
+                                                              ol_dleft=lco['dleft'])
+                elif 'dtop' in lco and 'dright' in lco:
+                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
+                                                              ol_dright=lco['dright'])
+                elif 'dbottom' in lco and 'dleft' in lco:
+                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
+                                                              ol_dleft=lco['dleft'])
+                elif 'dbottom' in lco and 'dright' in lco:
+                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
+                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
+                                                              ol_dright=lco['dright'])
+                else:
+                    print("Error during item_image_locs drawing... Exiting")
+                    exit()
+                image = cv2.rectangle(image,
+                                      (ol_coords['left'], ol_coords['top']), (ol_coords['right'], ol_coords['bottom']),
+                                      self.d3_blue_color, 2)
+                cv2.waitKey(750)
+                cv2.imshow("Robot Monitor", image)
 
     def run_detect(self, image, expected_num_codes, timeout=3000):
         print("Running Data Matrix Detection for " + str(expected_num_codes) + " Codes and a timeout of " + str(timeout))
-        detections = decode(self.current_image, timeout=timeout)
+        detections = decode(image, timeout=timeout)
         rospy.loginfo(detections)
         print(str(len(detections)) + " Data Matrix codes detected")
         if len(detections) < expected_num_codes:
@@ -293,21 +243,14 @@ class inventory_visualizer:
             scaled_image, detections = self.scale_image_and_detections(self.current_image, detections, 75)
             display_image, cam_ol_coords = self.image_overlay_center(display_image, scaled_image)
             text_drawn_at_y = 50
-            # display_image = cv2.putText(display_image, str(len(detections)) + " Data Matrix codes Detected",
-            #                             (0, text_drawn_at_y), cv2.FONT_HERSHEY_DUPLEX, 1.0, self.d3_blue_color, 2)
             drawn_rects = dict()
             cv2.imshow("Robot Monitor", display_image)
             for d in detections:
                 text_drawn_at_y += 50
-                # display_image = cv2.putText(display_image, str(d['data']) + " -> " + self.tag_to_item[d['data']],
-                #                             (0, text_drawn_at_y), cv2.FONT_HERSHEY_DUPLEX, 1.0, self.d3_blue_color, 2)
                 top = display_image.shape[0] - cam_ol_coords[1] - d['rect']['top']
                 left = cam_ol_coords[0] + d['rect']['left']
                 bottom = top - d['rect']['height']
                 right = left + d['rect']['width']
-                # display_image = cv2.rectangle(display_image,
-                #                               (left, top), (right, bottom),
-                #                               self.d3_blue_color, 2)
                 draw_data = dict()
                 draw_data['data'] = d['data']
                 draw_data['top'] = top
@@ -318,7 +261,6 @@ class inventory_visualizer:
                 draw_data['height'] = d['rect']['height']
                 draw_data['ctr'] = (left+int(d['rect']['width']/2), top-int(d['rect']['height']/2))
                 drawn_rects[d['data']] = draw_data
-                # cv2.waitKey(1000)
                 cv2.imshow("Robot Monitor", display_image)
             self.draw_detected_objects(display_image, drawn_rects)
             return True

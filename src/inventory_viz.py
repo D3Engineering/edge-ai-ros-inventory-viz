@@ -15,10 +15,12 @@ class inventory_visualizer:
         print("Init Inventory Visualizer")
         cv2.namedWindow("Robot Monitor", cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty("Robot Monitor", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        self.state = "STARTUP"
+        self.respath = "/root/j7ros_home/ros_ws/src/robotics_sdk/ros1/drivers/edge-ai-ros-inventory-viz/res/"
+        self.font = cv2.freetype.createFreeType2()
+        self.font.loadFontData(fontFileName=self.respath+'ProximaNova-Bold.otf', id=0)
+        self.state = "STARTUP|STARTUP"
         self.display_width = 1920
         self.display_height = 1080
-        self.respath = "/root/j7ros_home/ros_ws/src/robotics_sdk/ros1/drivers/edge-ai-ros-inventory-viz/res/"
         self.current_image = None
         cv2.imshow("Robot Monitor", self.get_blank_slide())
         cv2.waitKey(100)
@@ -94,11 +96,35 @@ class inventory_visualizer:
         drawn_image['bottom'] = oleh
         return bg_image, drawn_image
 
+    def draw_text(self, bg_image, text, font_size, origin, color=(0,0,0)):
+        self.font.putText(img=bg_image, text=text, org=origin, fontHeight=font_size, color=color,
+                          thickness=-1, line_type=cv2.LINE_AA, bottomLeftOrigin=False)
+        return bg_image
+
     def scale_image(self, image, scale_percent):
         sw = int(image.shape[1] * scale_percent / 100)
         sh = int(image.shape[0] * scale_percent / 100)
         scaled_image = cv2.resize(image, (sw, sh))
         return scaled_image
+
+    def state_to_display_name(self):
+        print(self.state)
+        objective_name = self.state.split("|")[0]
+        state_name = self.state.split("|")[1]
+        display_name = "State: "
+        if state_name == "STARTUP":
+            display_name += "Starting Up..."
+        elif state_name == "DRIVE":
+            display_name += "Driving to " + objective_name
+        elif state_name == "SCAN":
+            display_name += "Scanning Inventory at " + objective_name
+        elif state_name == "TRACK":
+            display_name += "Tracking " + objective_name
+        elif state_name == "DONE":
+            display_name += "Routine Complete!"
+        else:
+            display_name += "Unknown State: " + state_name + ", Objective: " + objective_name
+        return display_name
 
     def get_blank_slide(self):
         blank_slide = self.get_blank_image()
@@ -108,9 +134,7 @@ class inventory_visualizer:
         blank_slide, image_pos = self.image_overlay_pos(blank_slide,
                                                         self.scale_image(cv2.imread(self.respath + "TI.png"), 100),
                                                         ol_dright=0, ol_dbottom=0)
-        blank_slide, image_pos = self.image_overlay_pos(blank_slide,
-                                                        self.scale_image(cv2.imread(self.respath + "state/" + self.state + ".png"), 100),
-                                                        ol_dleft=0, ol_dtop=0)
+        blank_slide = self.draw_text(blank_slide, self.state_to_display_name(), 100, (20, 0))
         return blank_slide
 
     def image_overlay_center(self, bg_image, ol_image):
@@ -211,14 +235,14 @@ class inventory_visualizer:
 
     def pcl_img_callback(self, image):
         rospy.loginfo("Got PointCloud Visualized Image")
-        if self.state == "SCANNING_A" or self.state == "SCANNING_B" or self.state == "SCANNING_C":
-            rospy.loginfo("State is SCANNING_%, ignoring received PointCloud Image")
+        if self.state.endswith("SCAN"):
+            rospy.loginfo("State is SCAN, ignoring received PointCloud Image")
         else:
             try:
                 pcl_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
                 display_image = self.get_blank_slide()
                 display_image, ol_coords = self.image_overlay_center(display_image, pcl_image)
-                rospy.loginfo("Updating Frame")
+                rospy.loginfo("Updating PointCloud Frame")
                 cv2.imshow("Robot Monitor", display_image)
                 cv2.waitKey(50)
             except CvBridgeError as e:
@@ -263,15 +287,16 @@ class inventory_visualizer:
                 drawn_rects[d['data']] = draw_data
                 cv2.imshow("Robot Monitor", display_image)
             self.draw_detected_objects(display_image, drawn_rects)
+            cv2.waitKey(5000)
             return True
         except CvBridgeError as e:
             rospy.loginfo(e)
 
     def state_callback(self, state):
-        rospy.loginfo("State Received")
+        rospy.loginfo("State Received: " + state.data)
         self.state = state.data
         print(self.state)
-        if self.state == "SCANNING_A" or self.state == "SCANNING_B" or self.state == "SCANNING_C":
+        if self.state.endswith("SCAN"):
             print("Waiting for dmtx_count")
             self.expected_codes = rospy.wait_for_message('/dmtx_count', Int32).data
             print("Waiting for image_raw_rgb")
@@ -282,7 +307,7 @@ class inventory_visualizer:
                 self.expected_codes -= 1
             self.viz_resp_pub.publish("ACK")
         else:
-            print("State is not SCANNING_%, skipping Scan Routine")
+            print("State is not SCAN, skipping Scan Routine")
             display_image = self.get_blank_slide()
             cv2.imshow("Robot Monitor", display_image)
         cv2.waitKey(100)

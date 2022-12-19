@@ -41,5 +41,7 @@
 
     <include file="$(find d3_fusion)/launch/front_fusion_pcl_render.launch">
     </include>
+    <include file="$(find d3_fusion)/launch/front_fusion_trk_render.launch">
+    </include>
 </launch>
 

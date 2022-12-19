@@ -30,7 +30,8 @@ class inventory_visualizer:
         self.viz_resp_pub = rospy.Publisher('/viz_resp', String, queue_size=10)
         self.viz_resp_pub.publish("ACK")
         self.state_sub = rospy.Subscriber('/robot_state', String, self.state_callback, queue_size=5)
-        self.pcl_sub = rospy.Subscriber('/front/imx390/image_fused', Image, self.pcl_img_callback, queue_size=5)
+        self.pcl_sub = rospy.Subscriber('/front/imx390/image_fused_pcl', Image, self.pcl_img_callback, queue_size=5)
+        self.trk_sub = rospy.Subscriber('/front/imx390/image_fused_trk', Image, self.trk_img_callback, queue_size=5)
         self.expected_codes = 0
         item_image_size = 100
         item_image_locs = [{'dtop': 200, 'dleft': 75, 'inCorn': [], 'ctr': []}, {'dtop': 800, 'dleft': 75, 'inCorn': [], 'ctr': []},
@@ -235,14 +236,29 @@ class inventory_visualizer:
 
     def pcl_img_callback(self, image):
         rospy.loginfo("Got PointCloud Visualized Image")
-        if self.state.endswith("SCAN"):
-            rospy.loginfo("State is SCAN, ignoring received PointCloud Image")
+        if self.state.endswith("SCAN") or self.state.endswith("TRACK"):
+            rospy.loginfo("State is SCAN or TRACK, ignoring received PointCloud Image")
         else:
             try:
                 pcl_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
                 display_image = self.get_blank_slide()
                 display_image, ol_coords = self.image_overlay_center(display_image, pcl_image)
                 rospy.loginfo("Updating PointCloud Frame")
+                cv2.imshow("Robot Monitor", display_image)
+                cv2.waitKey(50)
+            except CvBridgeError as e:
+                rospy.loginfo(e)
+
+    def trk_img_callback(self, image):
+        rospy.loginfo("Got Tracker Visualized Image")
+        if not self.state.endswith("TRACK"):
+            rospy.loginfo("State is not TRACK, ignoring received PointCloud Image")
+        else:
+            try:
+                trk_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
+                display_image = self.get_blank_slide()
+                display_image, ol_coords = self.image_overlay_center(display_image, trk_image)
+                rospy.loginfo("Updating Tracking Frame")
                 cv2.imshow("Robot Monitor", display_image)
                 cv2.waitKey(50)
             except CvBridgeError as e:

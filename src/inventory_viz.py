@@ -242,7 +242,7 @@ class inventory_visualizer:
             try:
                 pcl_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
                 display_image = self.get_blank_slide()
-                display_image, ol_coords = self.image_overlay_center(display_image, pcl_image)
+                display_image, ol_coords = self.image_overlay_center(display_image, self.scale_image(pcl_image, 150))
                 rospy.loginfo("Updating PointCloud Frame")
                 cv2.imshow("Robot Monitor", display_image)
                 cv2.waitKey(50)
@@ -257,7 +257,7 @@ class inventory_visualizer:
             try:
                 trk_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
                 display_image = self.get_blank_slide()
-                display_image, ol_coords = self.image_overlay_center(display_image, trk_image)
+                display_image, ol_coords = self.image_overlay_center(display_image, self.scale_image(trk_image, 150))
                 rospy.loginfo("Updating Tracking Frame")
                 cv2.imshow("Robot Monitor", display_image)
                 cv2.waitKey(50)

@@ -18,7 +18,7 @@ class inventory_visualizer:
     as well as pre-processed camera/radar fusion images from the PointCloud and Tracking/CNN nodes (for fusion display)
     """
 
-    def __init__(self, camera_info):
+    def __init__(self):
         print("Init Inventory Visualizer")
         # Prepare Fullscreen OpenCV Window - doing it at this stage allows us to easily stop and re-open the visualizer
         # without the robot continuing (if Demo's WAIT_FOR_PC flag is True) if the window crashes
@@ -29,6 +29,11 @@ class inventory_visualizer:
         # Create a OpenCV FreeType font, so we can use Proxima Nova with variable text
         self.font = cv2.freetype.createFreeType2()
         self.font.loadFontData(fontFileName=self.respath + 'ProximaNova-Bold.otf', id=0)
+        # Load the D3 and TI Logos into Memory
+        self.d3_logo = cv2.imread(self.respath + "D3.png")
+        self.ti_logo = cv2.imread(self.respath + "TI.png")
+        # Load the big Scanning... text into Memory
+        self.scanning_label = cv2.imread(self.respath + "Scanning.png")
         # Prepare and Display Initial Slide
         self.state = "STARTUP|STARTUP"
         self.display_width = 1920
@@ -37,7 +42,6 @@ class inventory_visualizer:
         cv2.imshow("Robot Monitor", self.get_blank_slide())
         cv2.waitKey(100)
         self.d3_blue_color = (239, 174, 0)
-        self.camera_info = camera_info
         self.bridge = CvBridge()
         self.viz_resp_pub = rospy.Publisher('/viz_resp', String, queue_size=10)  # Used to talk to Demo node
         # Inform the Inventory Demo node that the Visualizer has completed Initialization and the Robot can continue
@@ -79,7 +83,10 @@ class inventory_visualizer:
         tti = {'D1': "Bearings", 'D2': "Belts", 'D3': "Bolts", 'D4': "Buttons", 'D5': "Chains", 'D6': "Gears",
                'D7': "Motors", 'D8': "Nuts", 'D9': "Shafts", 'D10': "Solder", 'D11': "Sprockets", 'D12': "Switches",
                'D13': "Washers", 'D14': "Wires"}
-        self.tag_to_item = tti  # Make the tag to image object available across the class
+        self.tag_to_item = tti  # Make the tag to item object available across the class
+        self.tag_to_image = dict()
+        for tag, item in self.tag_to_item.items():
+            self.tag_to_image[tag] = cv2.imread(self.respath+item+".png")
         print("Init Complete")
 
     def get_blank_image(self, num_channels=3):
@@ -193,12 +200,8 @@ class inventory_visualizer:
         :return: the resulting OpenCV Image
         """
         blank_slide = self.get_blank_image()
-        blank_slide, image_pos = self.image_overlay_pos(blank_slide,
-                                                        self.scale_image(cv2.imread(self.respath + "D3.png"), 100),
-                                                        ol_dleft=0, ol_dbottom=0)
-        blank_slide, image_pos = self.image_overlay_pos(blank_slide,
-                                                        self.scale_image(cv2.imread(self.respath + "TI.png"), 100),
-                                                        ol_dright=0, ol_dbottom=0)
+        blank_slide, image_pos = self.image_overlay_pos(blank_slide, self.d3_logo, ol_dleft=0, ol_dbottom=0)
+        blank_slide, image_pos = self.image_overlay_pos(blank_slide, self.ti_logo, ol_dright=0, ol_dbottom=0)
         blank_slide = self.draw_text(blank_slide, self.state_to_display_name(), 100, (20, 0))
         return blank_slide
 
@@ -286,21 +289,17 @@ class inventory_visualizer:
                                                                                     d['left'] + 2:d['right'] - 2]
                 ol_coords = None
                 if 'dtop' in lco and 'dleft' in lco:
-                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-                                                              ol_dleft=lco['dleft'])
+                    image, ol_coords = self.image_overlay_pos(image, self.tag_to_image[d['data']],
+                                                              ol_dtop=lco['dtop'], ol_dleft=lco['dleft'])
                 elif 'dtop' in lco and 'dright' in lco:
-                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dtop=lco['dtop'],
-                                                              ol_dright=lco['dright'])
+                    image, ol_coords = self.image_overlay_pos(image, self.tag_to_image[d['data']],
+                                                              ol_dtop=lco['dtop'], ol_dright=lco['dright'])
                 elif 'dbottom' in lco and 'dleft' in lco:
-                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-                                                              ol_dleft=lco['dleft'])
+                    image, ol_coords = self.image_overlay_pos(image, self.tag_to_image[d['data']],
+                                                              ol_dbottom=lco['dbottom'], ol_dleft=lco['dleft'])
                 elif 'dbottom' in lco and 'dright' in lco:
-                    image, ol_coords = self.image_overlay_pos(image, cv2.imread(
-                        self.respath + self.tag_to_item[d['data']] + ".png"), ol_dbottom=lco['dbottom'],
-                                                              ol_dright=lco['dright'])
+                    image, ol_coords = self.image_overlay_pos(image, self.tag_to_image[d['data']],
+                                                              ol_dbottom=lco['dbottom'], ol_dright=lco['dright'])
                 else:
                     print("Error during item_image_locs drawing... Exiting")
                     exit()
@@ -364,7 +363,7 @@ class inventory_visualizer:
         """
         rospy.loginfo("Got Tracker Visualized Image")
         if not self.state.endswith("TRACK"):
-            rospy.loginfo("State is not TRACK, ignoring received PointCloud Image")
+            rospy.loginfo("State is not TRACK, ignoring received Tracker Image")
         else:
             try:
                 trk_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='bgr8')
@@ -390,7 +389,7 @@ class inventory_visualizer:
             display_image = self.get_blank_slide()
             cv2.imshow("Robot Monitor", display_image)
             cv2.waitKey(100)
-            display_image, temp = self.image_overlay_center(display_image, cv2.imread(self.respath + "Scanning.png"))
+            display_image, temp = self.image_overlay_center(display_image, self.scanning_label)
             cv2.imshow("Robot Monitor", display_image)
             cv2.waitKey(100)
             detections = self.run_detect(self.current_image, self.expected_codes)
@@ -462,11 +461,11 @@ def main(args):
     rospy.loginfo("Waiting on camera_info: %s" % camera_info_topic)
 
     # Wait until we have valid calibration data before starting
-    camera_info = rospy.wait_for_message(camera_info_topic, CameraInfo)
-    camera_info = np.array(camera_info.K, dtype=np.float32).reshape((3, 3))
-    rospy.loginfo("Camera intrinsic matrix: %s" % str(camera_info))
+    #camera_info = rospy.wait_for_message(camera_info_topic, CameraInfo)
+    #camera_info = np.array(camera_info.K, dtype=np.float32).reshape((3, 3))
+    #rospy.loginfo("Camera intrinsic matrix: %s" % str(camera_info))
     # Start the Inventory Visualizer
-    inv_viz = inventory_visualizer(camera_info)
+    inv_viz = inventory_visualizer()
     try:
         rospy.spin()
     except KeyboardInterrupt:
